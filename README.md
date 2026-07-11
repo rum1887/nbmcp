@@ -22,6 +22,32 @@ In another shell:
 python examples/test_client.py
 ```
 
+## Why nbmcp
+
+Most tool servers validate incoming JSON arguments in Python on every request.
+`nbmcp` instead generates a JSON schema once at decoration time from Python
+function signatures, then hands that schema to the Rust core.
+
+This means:
+
+- invalid calls are rejected before Python ever runs
+- validation overhead is lower
+- Python only executes the tool body after validation succeeds
+- blocking I/O in tools still releases the GIL normally
+
+## Features
+
+- Rust-side MCP JSON-RPC transport over stdio
+- HTTP JSON-RPC transport with `/` and `/jsonrpc` endpoints
+- Simple SSE event stream on `/events`
+- Tool registration via `@mcp.tool(...)`
+- Resource registration via `mcp.resource(...)`
+- Prompt template registration via `mcp.prompt(...)`
+- Type-hint driven schema generation
+- Rust validation of tool-call payloads
+- `io`, `process`, and `cpu` concurrency modes
+- Minimal v0.1 dependency surface
+
 ## Example
 
 ```python
@@ -81,12 +107,6 @@ def get_weather(city: str, units: str = "celsius") -> dict:
 if __name__ == "__main__":
     mcp.run_http("127.0.0.1:8080")
 ```
-
-## Why nbmcp
-
-Most tool servers validate incoming JSON arguments in Python on every request.
-`nbmcp` instead generates a JSON schema once at decoration time from Python
-function signatures, then hands that schema to the Rust core.
 
 This means:
 
@@ -151,26 +171,10 @@ on older Python versions.
 
 ## Roadmap
 
-<<<<<<< HEAD
-Planned v0.2+ work:
-
-- Resources and prompts
-- HTTP/SSE transport
-- `nbmcp check` schema linter
-- `nbmcp.lock`
-=======
-Implemented so far:
-
-- HTTP/SSE transport
-- `nbmcp check` schema linter
-- `nbmcp.lock`
-- Resource and prompt metadata registration API
-
 Pending:
 
 - Full resources/prompts workflow and runtime integration
 - Production-ready SSE events beyond the connection handshake
->>>>>>> ab34bde (feat(engine): add prompt/resource registration and improve HTTP/SSE docs)
 
 ## Build
 
