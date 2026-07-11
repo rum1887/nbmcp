@@ -61,13 +61,47 @@ stdout ◀── Rust: write JSON-RPC response ◀──────────
 - `python/nbmcp/__init__.py` — the public `Nbmcp` class and `@tool()`
   decorator.
 
+## Concurrency modes
+
+```python
+@mcp.tool()                              # default: concurrency="io"
+def get_weather(city: str) -> dict: ...
+
+@mcp.tool(concurrency="process")         # CPU-bound: runs in a worker process
+def count_primes(n: int) -> dict: ...
+
+@mcp.tool(concurrency="cpu")             # like "process", but a real separate
+def analyze(data: list) -> dict: ...     # interpreter (PEP 684) on Python 3.14+
+```
+
+- **`io`** (default) — call directly. The Rust core only holds the GIL for
+  the duration of the call; a real I/O wait (`requests.get`, a DB query,
+  a subprocess) releases the GIL the same way it does in plain Python, so
+  multiple in-flight calls overlap.
+- **`process`** — dispatched to a `ProcessPoolExecutor` (`multiprocessing`,
+  `spawn` start method — see the comment in `_concurrency.py` for why
+  *not* `fork`, it's not a stylistic choice). The function and its
+  arguments/return value must be picklable, so define tools at module
+  level, not as closures or lambdas. Verified end-to-end in
+  `examples/test_concurrency.py`: two heavy `count_primes` calls fired
+  back-to-back finish within ~10ms of each other instead of one taking
+  roughly 2x as long as the other.
+- **`cpu`** — intended to use a genuinely separate interpreter (PEP 684,
+  per-interpreter GIL) via the stdlib `concurrent.interpreters` module.
+  That module only exists on **Python 3.14+**. On earlier versions there
+  is no safe public API for this yet: the private `_xxsubinterpreters`
+  module available on 3.12/3.13 has no channel/queue mechanism to pass
+  results back safely, and C extensions — including nbmcp's own PyO3
+  core — aren't guaranteed subinterpreter-safe. So on < 3.14, `cpu` falls
+  back to `process` with a one-time `warnings.warn`, rather than silently
+  pretending to give you subinterpreter isolation it can't deliver. This
+  is the honest state of subinterpreters in the Python ecosystem today,
+  not an nbmcp limitation specifically.
+
 ## What's *not* here yet (known scope for v0.2+)
 
 - Resources and prompts (tools only, for now)
 - HTTP/SSE transport (stdio only)
-- Per-tool concurrency modes (`io` / `cpu` / `process`) — everything is a
-  blocking-thread task today; subinterpreter-based true parallelism for
-  CPU-bound tools is future work
 - `nbmcp check` (the schema linter) and `nbmcp.lock` — separate, planned
   as standalone pieces of the ecosystem
 
@@ -82,6 +116,7 @@ python examples/weather_server.py
 ## Testing
 
 ```bash
-cargo test --lib                  # Rust schema validator unit tests
-python examples/test_client.py    # end-to-end: real JSON-RPC handshake against the example server
+cargo test --lib                     # Rust schema validator unit tests
+python examples/test_client.py       # end-to-end: real JSON-RPC handshake against the example server
+python examples/test_concurrency.py  # proves concurrency="process" calls genuinely overlap
 ```
