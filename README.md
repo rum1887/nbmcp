@@ -7,7 +7,6 @@ routing, and schema validation while Python owns the tool bodies.
 - Python defines tool behavior with plain functions and type hints.
 - Supports `io`, `process`, and `cpu` concurrency modes.
 
-```
 
 ## Why nbmcp
 
@@ -35,6 +34,7 @@ Benefits:
 - type-hint-driven tool input schema generation
 - Rust validation of tool-call payloads
 - `io`, `process`, and `cpu` concurrency modes
+
 ## Installation
 
 Assuming `nbmcp` is published on PyPI, install the package with:

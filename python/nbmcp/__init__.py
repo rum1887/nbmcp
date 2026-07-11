@@ -14,6 +14,7 @@
 
 import importlib
 import json
+import warnings
 
 from . import _concurrency
 from ._schema import generate_tool_definition
@@ -23,12 +24,17 @@ def _load_native_engine():
     try:
         module = importlib.import_module("nbmcp._nbmcp_core")
         return module.NativeEngine
-    except ImportError as exc:
-        raise ImportError(
-            "nbmcp: native extension _nbmcp_core is not available. "
-            "Build the package with `python -m maturin develop --release` "
-            "or install the wheel first."
-        ) from exc
+    except ImportError:
+        warnings.warn(
+            "nbmcp: native extension _nbmcp_core is not available; "
+            "falling back to the pure-Python engine. "
+            "This is supported on PyPy and non-extension installs.",
+            ImportWarning,
+            stacklevel=2,
+        )
+        from ._native_engine import NativeEngine
+
+        return NativeEngine
 
 __all__ = ["Nbmcp"]
 __version__ = "0.1.0"
