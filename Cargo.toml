@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.20", features = ["extension-module"] }
 tokio = { version = "1", features = ["rt-multi-thread", "io-std", "io-util", "sync", "macros"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
 hyper = { version = "0.14", features = ["full"] }
 bytes = "1"
 serde = { version = "1", features = ["derive"] }

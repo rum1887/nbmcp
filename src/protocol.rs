@@ -15,7 +15,9 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{broadcast, Mutex as AsyncMutex};
+use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::StreamExt;
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 
@@ -49,7 +51,7 @@ pub async fn serve_stdio(
         let server_name = server_name.clone();
 
         tokio::spawn(async move {
-            if let Some(response) = handle_message(&server_name, &tools, &resources, &prompts, &line) {
+            if let Some(response) = handle_message(&server_name, &tools, &resources, &prompts, None, &line) {
                 let mut out = stdout.lock().await;
                 let _ = out.write_all(response.to_string().as_bytes()).await;
                 let _ = out.write_all(b"\n").await;
@@ -68,11 +70,13 @@ pub async fn serve_http(
     prompts: Arc<Vec<Value>>,
     address: String,
 ) -> Result<(), String> {
+    let (event_sender, _) = broadcast::channel::<String>(128);
     let make_svc = make_service_fn(move |_conn| {
         let tools = Arc::clone(&tools);
         let resources = Arc::clone(&resources);
         let prompts = Arc::clone(&prompts);
         let server_name = server_name.clone();
+        let event_sender = event_sender.clone();
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
                 handle_http_request(
@@ -81,6 +85,7 @@ pub async fn serve_http(
                     Arc::clone(&tools),
                     Arc::clone(&resources),
                     Arc::clone(&prompts),
+                    event_sender.clone(),
                 )
             }))
         }
@@ -98,6 +103,7 @@ async fn handle_http_request(
     tools: Arc<HashMap<String, ToolEntry>>,
     resources: Arc<Vec<Value>>,
     prompts: Arc<Vec<Value>>,
+    event_sender: broadcast::Sender<String>,
 ) -> Result<Response<Body>, Infallible> {
     match (req.method(), req.uri().path()) {
         (&Method::POST, "/") | (&Method::POST, "/jsonrpc") => {
@@ -111,7 +117,14 @@ async fn handle_http_request(
                 }
             };
             let line = std::str::from_utf8(&bytes).unwrap_or("");
-            let response = match handle_message(&server_name, &tools, &resources, &prompts, line) {
+            let response = match handle_message(
+                &server_name,
+                &tools,
+                &resources,
+                &prompts,
+                Some(&event_sender),
+                line,
+            ) {
                 Some(value) => {
                     let text = value.to_string();
                     Response::builder()
@@ -128,7 +141,19 @@ async fn handle_http_request(
             Ok(response)
         }
         (&Method::GET, "/events") => {
-            let body = Body::from("event: connected\n\n");
+            let receiver = event_sender.subscribe();
+            let event_stream = BroadcastStream::new(receiver).filter_map(|result| {
+                match result {
+                    Ok(message) => Some(Ok::<Bytes, Infallible>(Bytes::from(message))),
+                    Err(_) => None,
+                }
+            });
+
+            let initial = tokio_stream::iter(vec![Ok::<Bytes, Infallible>(Bytes::from(
+                "event: connected\n\n",
+            ))]);
+            let body = Body::wrap_stream(initial.chain(event_stream));
+
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "text/event-stream")
@@ -151,6 +176,7 @@ fn handle_message(
     tools: &HashMap<String, ToolEntry>,
     resources: &Vec<Value>,
     prompts: &Vec<Value>,
+    event_sender: Option<&broadcast::Sender<String>>,
     line: &str,
 ) -> Option<Value> {
     let parsed: Value = match serde_json::from_str(line) {
@@ -193,6 +219,23 @@ fn handle_message(
         "tools/call" => handle_tool_call(tools, &params),
         other => Err((-32601, format!("Method not found: {other}"))),
     };
+
+    if let Some(sender) = event_sender {
+        if method == "tools/call" {
+            let tool_name = params.get("name").and_then(Value::as_str).unwrap_or("unknown");
+            let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
+            let status = match &result {
+                Ok(_) => "ok",
+                Err(_) => "error",
+            };
+            let payload = match &result {
+                Ok(result) => json!({"status": status, "tool": tool_name, "arguments": arguments, "result": result}),
+                Err((code, message)) => json!({"status": status, "tool": tool_name, "arguments": arguments, "error": {"code": code, "message": message}}),
+            };
+            let event_text = format!("event: tool_call\ndata: {}\n\n", payload.to_string());
+            let _ = sender.send(event_text);
+        }
+    }
 
     if is_notification {
         return None;
