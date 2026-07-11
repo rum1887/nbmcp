@@ -6,8 +6,13 @@
 //! I/O doesn't stall the reader loop or other in-flight calls.
 
 use crate::{call_python_tool, validate_arguments, ToolEntry};
+use bytes::Bytes;
+use hyper::body::to_bytes;
+use hyper::service::{make_service_fn, service_fn};
+use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex as AsyncMutex;
@@ -50,6 +55,75 @@ pub async fn serve_stdio(
     }
 
     Ok(())
+}
+
+pub async fn serve_http(
+    server_name: String,
+    tools: Arc<HashMap<String, ToolEntry>>,
+    address: String,
+) -> Result<(), String> {
+    let make_svc = make_service_fn(move |_conn| {
+        let tools = Arc::clone(&tools);
+        let server_name = server_name.clone();
+        async move {
+            Ok::<_, Infallible>(service_fn(move |req| {
+                handle_http_request(req, server_name.clone(), Arc::clone(&tools))
+            }))
+        }
+    });
+
+    let addr = address.parse().map_err(|e| format!("invalid address: {e}"))?;
+    let server = Server::bind(&addr).serve(make_svc);
+
+    server.await.map_err(|e| format!("HTTP server error: {e}"))
+}
+
+async fn handle_http_request(
+    req: Request<Body>,
+    server_name: String,
+    tools: Arc<HashMap<String, ToolEntry>>,
+) -> Result<Response<Body>, Infallible> {
+    match (req.method(), req.uri().path()) {
+        (&Method::POST, "/") | (&Method::POST, "/jsonrpc") => {
+            let bytes: Bytes = match to_bytes(req.into_body()).await {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    return Ok(Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body(Body::from("Invalid request body"))
+                        .unwrap())
+                }
+            };
+            let line = std::str::from_utf8(&bytes).unwrap_or("");
+            let response = match handle_message(&server_name, &tools, line) {
+                Some(value) => {
+                    let text = value.to_string();
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .header("content-type", "application/json")
+                        .body(Body::from(text))
+                        .unwrap()
+                }
+                None => Response::builder()
+                    .status(StatusCode::NO_CONTENT)
+                    .body(Body::empty())
+                    .unwrap(),
+            };
+            Ok(response)
+        }
+        (&Method::GET, "/events") => {
+            let body = Body::from("event: hello\n\n");
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "text/event-stream")
+                .body(body)
+                .unwrap())
+        }
+        _ => Ok(Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("Not found"))
+            .unwrap()),
+    }
 }
 
 /// Handle one JSON-RPC message. Returns `None` for notifications (no `id`,

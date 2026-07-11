@@ -87,3 +87,11 @@ class Nbmcp:
         """Start the MCP stdio server. Blocks until the client disconnects
         (stdin closes). Call this as the last line of your server script."""
         self._engine.run_stdio()
+
+    def run_http(self, address: str = "127.0.0.1:8080"):
+        """Start the MCP HTTP server on the given address.
+
+        The server accepts JSON-RPC requests over HTTP POST on `/` or
+        `/jsonrpc`, and exposes a simple SSE event stream on `/events`.
+        """
+        self._engine.run_http(address)

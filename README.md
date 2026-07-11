@@ -37,6 +37,24 @@ if __name__ == "__main__":
     mcp.run()
 ```
 
+## HTTP transport example
+
+```python
+from nbmcp import Nbmcp
+
+mcp = Nbmcp("weather")
+
+@mcp.tool(description="Get current weather for a city")
+def get_weather(city: str, units: str = "celsius") -> dict:
+    return {"city": city, "temp": 24, "units": units}
+
+if __name__ == "__main__":
+    mcp.run_http("127.0.0.1:8080")
+```
+
+The HTTP server accepts JSON-RPC POST requests on `/` or `/jsonrpc` and
+exposes a simple SSE stream on `/events`.
+
 ## Why nbmcp
 
 Most tool servers validate incoming JSON arguments in Python on every request.
