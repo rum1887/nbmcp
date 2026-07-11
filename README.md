@@ -87,6 +87,7 @@ Run a client in another shell:
 
 ```bash
 python examples/test_client.py
+```
 
 ## Usage
 
