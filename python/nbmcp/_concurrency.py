@@ -31,6 +31,7 @@ from __future__ import annotations
 import atexit
 import functools
 import multiprocessing
+import signal
 import sys
 import warnings
 from concurrent.futures import ProcessPoolExecutor
@@ -39,20 +40,32 @@ _process_pool: ProcessPoolExecutor | None = None
 _warned_no_subinterpreters = False
 
 
-@atexit.register
 def _shutdown_process_pool():
-    # Note: this runs on normal interpreter exit, but NOT on SIGKILL and not
-    # reliably on SIGTERM (Python's default SIGTERM disposition terminates
-    # the process without unwinding to run atexit hooks). A process killed
-    # by an external supervisor can leave workers as orphans holding
-    # inherited file descriptors (notably stdout/stderr) open. If you run
-    # nbmcp under a process manager, prefer sending SIGINT (which Python
-    # turns into a normal KeyboardInterrupt / clean unwind) over SIGTERM/-9
-    # where you can.
+    # This runs on normal interpreter exit and also on SIGTERM, where Python's
+    # default disposition would otherwise terminate the process without
+    # unwinding atexit hooks. A process killed by an external supervisor can
+    # leave workers as orphans holding inherited file descriptors (notably
+    # stdout/stderr) open, which may hang a managed server shutdown.
     global _process_pool
     if _process_pool is not None:
         _process_pool.shutdown(wait=False, cancel_futures=True)
         _process_pool = None
+
+
+@atexit.register
+def _shutdown_process_pool_atexit():
+    _shutdown_process_pool()
+
+
+def _handle_sigterm(signum, frame):
+    _shutdown_process_pool()
+    # Re-raise the signal using the default handler so the process exits with
+    # the expected status and any supervising runtime sees the normal SIGTERM.
+    signal.signal(signum, signal.SIG_DFL)
+    signal.raise_signal(signum)
+
+
+signal.signal(signal.SIGTERM, _handle_sigterm)
 
 
 def _get_process_pool() -> ProcessPoolExecutor:
