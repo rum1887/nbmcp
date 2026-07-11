@@ -220,6 +220,7 @@ fn handle_message(
         "prompts/list" => Ok(json!({ "prompts": prompts })),
         "resources/get" => get_resource(resources, &params),
         "prompts/get" => get_prompt(prompts, &params),
+        "prompts/render" => render_prompt(prompts, &params),
         "tools/call" => handle_tool_call(tools, &params),
         other => Err((-32601, format!("Method not found: {other}"))),
     };
@@ -279,6 +280,46 @@ fn get_prompt(prompts: &Vec<Value>, params: &Value) -> Result<Value, (i64, Strin
     }
     Err((-32601, format!("Prompt not found: {name}")))
 }
+
+fn render_prompt(prompts: &Vec<Value>, params: &Value) -> Result<Value, (i64, String)> {
+    let name = params
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or((-32602, "Missing or invalid prompt name".into()))?;
+
+    let variables = params.get("variables").cloned().unwrap_or(json!({}));
+    let variables = variables
+        .as_object()
+        .ok_or((-32602, "Prompt variables must be an object".into()))?;
+
+    let prompt = prompts
+        .iter()
+        .find(|prompt| prompt.get("name").and_then(Value::as_str) == Some(name))
+        .ok_or((-32601, format!("Prompt not found: {name}")))?;
+
+    let template = prompt
+        .get("template")
+        .and_then(Value::as_str)
+        .ok_or((-32602, format!("Prompt '{}' has no template", name)))?;
+
+    let rendered = render_template(template, variables);
+    Ok(json!({ "rendered": rendered }))
+}
+
+fn render_template(template: &str, variables: &serde_json::Map<String, Value>) -> String {
+    let mut result = template.to_string();
+    for (key, value) in variables {
+        let replacement = match value {
+            Value::String(s) => s.clone(),
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => b.to_string(),
+            other => other.to_string(),
+        };
+        result = result.replace(&format!("{{{}}}", key), &replacement);
+    }
+    result
+}
+
 fn handle_tool_call(
     tools: &HashMap<String, ToolEntry>,
     params: &Value,
@@ -412,6 +453,31 @@ mod tests {
         )
         .unwrap();
         assert_eq!(response["result"]["prompt"], prompts[0]);
+    }
+
+    #[test]
+    fn render_prompt_by_name() {
+        let tools = HashMap::<String, ToolEntry>::new();
+        let resources = Vec::new();
+        let prompts = vec![json!({"name": "weather_summary", "description": "Summary prompt", "template": "City: {city}, Units: {units}"})];
+
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "prompts/render",
+            "params": {"name": "weather_summary", "variables": {"city": "Bengaluru", "units": "celsius"}}
+        });
+        let response = handle_message(
+            "weather",
+            &tools,
+            &resources,
+            &prompts,
+            None,
+            &request.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(response["result"]["rendered"], "City: Bengaluru, Units: celsius");
     }
 
     #[test]

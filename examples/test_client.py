@@ -64,7 +64,11 @@ try:
     send({"jsonrpc": "2.0", "id": 6, "method": "prompts/get", "params": {"name": "weather_summary"}})
     print("prompts/get ->", json.dumps(recv(), indent=2))
 
-    # 8. tools/call: valid arguments
+    # 8. prompts/render: render a prompt template with runtime variables
+    send({"jsonrpc": "2.0", "id": 7, "method": "prompts/render", "params": {"name": "weather_summary", "variables": {"city": "Bengaluru", "units": "celsius"}}})
+    print("prompts/render ->", json.dumps(recv(), indent=2))
+
+    # 9. tools/call: valid arguments
     send({
         "jsonrpc": "2.0", "id": 3, "method": "tools/call",
         "params": {"name": "get_weather", "arguments": {"city": "Bengaluru"}},

@@ -43,7 +43,7 @@ This means:
 - Tool registration via `@mcp.tool(...)`
 - Resource registration via `mcp.resource(...)`
 - Prompt template registration via `mcp.prompt(...)`
-- Runtime exposure through `resources/list`, `prompts/list`, `resources/get`, and `prompts/get`
+- Runtime exposure through `resources/list`, `prompts/list`, `resources/get`, `prompts/get`, and `prompts/render`
 - `initialize` returns registered resources and prompts for richer client workflows
 - Type-hint driven schema generation
 - Rust validation of tool-call payloads
@@ -115,6 +115,7 @@ The HTTP server exposes asset discovery endpoints clients can use to fetch the r
 - `initialize` returns `resources` and `prompts` along with server info
 - `resources/list` and `prompts/list` return the full registered collections
 - `resources/get` and `prompts/get` return a single asset by name
+- `prompts/render` produces a rendered prompt string from a registered template and runtime variables
 
 This means:
 
