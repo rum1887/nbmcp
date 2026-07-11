@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import argparse
 import ast
+import hashlib
+import json
 import pathlib
 import sys
 from dataclasses import dataclass
 from typing import Iterable, List, Optional, Tuple
+
+from ._lock import generate_lock, verify_lock
 
 PRIMITIVE_TYPES = {"str", "int", "float", "bool"}
 
@@ -195,9 +200,24 @@ def main(argv=None) -> int:
     check_parser = subparsers.add_parser("check", help="Lint nbmcp tool definitions")
     check_parser.add_argument("paths", nargs="*", default=["."])
 
+    lock_parser = subparsers.add_parser("lock", help="Manage nbmcp lock files")
+    lock_subparsers = lock_parser.add_subparsers(dest="lock_command", required=True)
+
+    generate_parser = lock_subparsers.add_parser("generate", help="Generate a lock file")
+    generate_parser.add_argument("output", nargs="?", default="nbmcp.lock")
+    generate_parser.add_argument("project_dir", nargs="?", default=".")
+
+    verify_parser = lock_subparsers.add_parser("verify", help="Verify a lock file")
+    verify_parser.add_argument("lockfile", nargs="?", default="nbmcp.lock")
+
     args = parser.parse_args(argv)
     if args.command == "check":
         return run_check(args.paths)
+    if args.command == "lock":
+        if args.lock_command == "generate":
+            return generate_lock(args.output, args.project_dir)
+        if args.lock_command == "verify":
+            return verify_lock(args.lockfile)
     return 0
 
 

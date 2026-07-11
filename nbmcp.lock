@@ -1,0 +1,22 @@
+{
+  "lockVersion": "nbmcp-lock-v1",
+  "generatedAt": "2026-07-11T18:50:16.603796Z",
+  "metadata": {
+    "python_version": "3.14.2",
+    "platform": "darwin",
+    "project_root": "/Users/ramya/projects/nbmcp",
+    "pyproject": {
+      "path": "/Users/ramya/projects/nbmcp/pyproject.toml",
+      "sha256": "1558ade9875e4c464ce88d8db380fbbb79fc102e462b64b2d8832b165f941832"
+    },
+    "cargo_toml": {
+      "path": "/Users/ramya/projects/nbmcp/Cargo.toml",
+      "sha256": "6b774850f75f3d0e58171b734a69c54b205952caea7dc75195483c4d370872cd"
+    }
+  },
+  "transport": "stdio",
+  "server": {
+    "name": "nbmcp",
+    "description": "nbmcp server lock file"
+  }
+}
