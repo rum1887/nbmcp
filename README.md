@@ -1,55 +1,68 @@
 # nbmcp
 
-`nbmcp` is a lightweight MCP server framework that lets Rust own transport,
+`nbmcp` is a fast MCP server framework that gives Rust ownership of transport,
 routing, and schema validation while Python owns the tool bodies.
 
 - Rust validates incoming tool arguments before Python executes the tool.
 - Python defines tool behavior with plain functions and type hints.
 - Supports `io`, `process`, and `cpu` concurrency modes.
 
-## Quick start
-
-```bash
-pip install maturin
-python -m maturin develop --release
-python examples/weather_server.py
-```
-
-In another shell:
-
-```bash
-python examples/test_client.py
 ```
 
 ## Why nbmcp
 
 Most tool servers validate incoming JSON arguments in Python on every request.
-`nbmcp` instead generates a JSON schema once at decoration time from Python
-function signatures, then hands that schema to the Rust core.
+`nbmcp` generates JSON schemas from Python function signatures at decoration time,
+then hands those schemas to Rust for validation before Python executes the tool.
 
-This means:
+Benefits:
 
-- invalid calls are rejected before Python ever runs
+- invalid calls are rejected before Python runs
 - validation overhead is lower
-- Python only executes the tool body after validation succeeds
+- the Python tool body only executes after validation succeeds
 - blocking I/O in tools still releases the GIL normally
 
 ## Features
 
 - Rust-side MCP JSON-RPC transport over stdio
-- HTTP JSON-RPC transport with `/` and `/jsonrpc` endpoints
-- Simple SSE event stream on `/events`
-- Tool registration via `@mcp.tool(...)`
-- Resource registration via `mcp.resource(...)`
-- Prompt template registration via `mcp.prompt(...)`
-- Runtime exposure through `resources/list`, `prompts/list`, `resources/get`, `prompts/get`, and `prompts/render`
-- `initialize` returns registered resources and prompts for richer client workflows
-- Type-hint driven schema generation
+- HTTP JSON-RPC transport with `/` and `/jsonrpc`
+- SSE event stream on `/events`
+- tool registration via `@mcp.tool(...)`
+- resource registration via `mcp.resource(...)`
+- prompt template registration via `mcp.prompt(...)`
+- runtime discovery with `resources/list`, `prompts/list`, `resources/get`, `prompts/get`
+- prompt rendering via `prompts/render`
+- type-hint-driven tool input schema generation
 - Rust validation of tool-call payloads
 - `io`, `process`, and `cpu` concurrency modes
-- Minimal v0.1 dependency surface
+## Installation
 
-## Example
+Assuming `nbmcp` is published on PyPI, install the package with:
+
+```bash
+python3 -m pip install nbmcp
+```
+
+For local development, install the repository in editable mode:
+
+```bash
+python3 -m pip install -e .
+```
+
+Optional convenience install using `uv`:
+
+```bash
+python3 -m pip install uv
+uv install .
+```
+
+If you want to install a development preview directly from GitHub:
+
+```bash
+python3 -m pip install git+https://github.com/<user>/nbmcp.git
+```
+
+## Quick start
 
 ```python
 from nbmcp import Nbmcp
@@ -64,7 +77,35 @@ if __name__ == "__main__":
     mcp.run()
 ```
 
-## HTTP transport example
+Run the server:
+
+```bash
+python examples/weather_server.py
+```
+
+Run a client in another shell:
+
+```bash
+python examples/test_client.py
+
+## Usage
+
+### Standard stdio server
+
+```python
+from nbmcp import Nbmcp
+
+mcp = Nbmcp("weather")
+
+@mcp.tool(description="Get current weather for a city")
+def get_weather(city: str, units: str = "celsius") -> dict:
+    return {"city": city, "temp": 24, "units": units}
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+### HTTP server
 
 ```python
 from nbmcp import Nbmcp
@@ -82,7 +123,7 @@ if __name__ == "__main__":
 The HTTP server accepts JSON-RPC POST requests on `/` or `/jsonrpc` and
 exposes a simple SSE stream on `/events`.
 
-## Resource and prompt example
+### Resources and prompts
 
 ```python
 from nbmcp import Nbmcp
@@ -100,51 +141,14 @@ mcp.prompt(
     template="City: {city}\nUnits: {units}\nProvide a concise weather summary.",
     description="Prompt template placeholder for future agent workflows",
 )
-
-@mcp.tool(description="Get current weather for a city")
-def get_weather(city: str, units: str = "celsius") -> dict:
-    return {"city": city, "temp": 24, "units": units}
-
-if __name__ == "__main__":
-    mcp.run_http("127.0.0.1:8080")
 ```
 
-The HTTP server exposes asset discovery endpoints clients can use to fetch the registered runtime state:
+Clients can then discover runtime assets via:
 
-- `initialize` returns `resources` and `prompts` along with server info
-- `resources/list` and `prompts/list` return the full registered collections
-- `resources/get` and `prompts/get` return a single asset by name
-- `prompts/render` produces a rendered prompt string from a registered template and runtime variables
-
-This means:
-
-- invalid calls are rejected before Python ever runs
-- validation overhead is lower
-- Python only executes the tool body after validation succeeds
-- blocking I/O in tools still releases the GIL normally
-
-## Architecture
-
-```text
-stdin ─▶ Rust: read line ─▶ parse JSON-RPC ─▶ validate args against schema
-                                                       │
-                                          (invalid) ───┤
-                                                       │ (valid)
-                                                       ▼
-                                          spawn_blocking task: acquire GIL,
-                                          call Python function, release GIL
-                                                       │
-stdout ◀── Rust: write JSON-RPC response ◀─────────────┘
-```
-
-### Core components
-
-- `src/schema.rs` — lightweight JSON schema validator for generated schemas
-- `src/protocol.rs` — MCP JSON-RPC-over-stdio transport
-- `src/convert.rs` — JSON ↔ Python conversion
-- `src/lib.rs` — PyO3 `NativeEngine` bridge
-- `python/nbmcp/_schema.py` — generates tool input schemas from type hints
-- `python/nbmcp/__init__.py` — public `Nbmcp` API and decorator
+- `initialize` returns `resources` and `prompts`
+- `resources/list` and `prompts/list`
+- `resources/get` and `prompts/get`
+- `prompts/render`
 
 ## Concurrency modes
 
@@ -159,54 +163,64 @@ def count_primes(n: int) -> dict: ...
 def analyze(data: list) -> dict: ...
 ```
 
-- `io` — default mode. Best for I/O-bound tools.
-- `process` — run tool bodies in worker processes. Best for CPU-bound work.
-- `cpu` — use a separate interpreter on Python 3.14+; falls back to `process`
-on older Python versions.
+- `io` — default mode; best for I/O-bound tools
+- `process` — worker processes for CPU-bound work
+- `cpu` — separate interpreter on Python 3.14+, falling back to `process`
 
-## Roadmap
+## Development
 
-Pending:
-
-- Production-ready SSE events beyond the connection handshake
-
-## Build
+Install the repository for local development:
 
 ```bash
-pip install maturin
-python -m maturin develop --release
+python3 -m pip install -e .
 ```
 
-## Lock file workflow
-
-`nbmcp` can generate a lock file that pins project metadata, transport configuration,
-and file checksums for the Python/Rust source tree.
-
-Generate a stdio lock file:
+Optional developer dependencies:
 
 ```bash
-PYTHONPATH=python python3 -m nbmcp lock generate nbmcp.lock .
+python3 -m pip install ruff pytest
 ```
 
-Generate an HTTP lock file with a pinned bind address:
-
-```bash
-PYTHONPATH=python python3 -m nbmcp lock generate --transport http --address 127.0.0.1:8080 nbmcp.lock .
-```
-
-Verify the current lock file:
-
-```bash
-PYTHONPATH=python python3 -m nbmcp lock verify nbmcp.lock
-```
-
-## Test
+Run tests and examples:
 
 ```bash
 cargo test --lib
 python examples/test_client.py
 python examples/test_concurrency.py
 ```
+
+## Publishing to PyPI
+
+Build source and wheel distributions:
+
+```bash
+python3 -m pip install build twine
+python3 -m build
+```
+
+Upload to PyPI:
+
+```bash
+python3 -m twine upload dist/*
+```
+
+If you do not want to publish immediately, install directly from GitHub:
+
+```bash
+python3 -m pip install git+https://github.com/<user>/nbmcp.git
+```
+
+## Packaging notes
+
+`nbmcp` is configured to build as a native extension with `maturin`.
+If users install from source, a Rust toolchain is required unless prebuilt
+wheels are available for their platform.
+
+## Project structure
+
+- `src/` — Rust implementation and PyO3 bridge
+- `python/nbmcp/` — Python public API and schema generation
+- `examples/` — sample server and client scripts
 
 ## License
 

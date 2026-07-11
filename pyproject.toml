@@ -7,13 +7,27 @@ name = "nbmcp"
 version = "0.1.0"
 description = "A fast MCP server framework: Rust transport, routing, and schema validation; Python tool bodies."
 readme = "README.md"
+readme-content-type = "text/markdown"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 keywords = ["mcp", "model-context-protocol", "rust", "pyo3"]
 classifiers = [
-  "Programming Language :: Rust",
+  "Development Status :: 4 - Beta",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
 ]
+dependencies = []
+optional-dependencies = { dev = ["ruff>=0.0.1", "pytest>=8.0", "maturin>=1.4,<2.0"] }
 
 [tool.maturin]
 python-source = "python"
