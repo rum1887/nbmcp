@@ -10,7 +10,6 @@ routing, and schema validation while Python owns the tool bodies.
 ## Quick start
 
 ```bash
-cd /Users/ramya/projects/nbmcp
 pip install maturin
 python -m maturin develop --release
 python examples/weather_server.py
