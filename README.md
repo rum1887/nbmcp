@@ -10,6 +10,7 @@ routing, and schema validation while Python owns the tool bodies.
 ## Quick start
 
 ```bash
+cd /Users/ramya/projects/nbmcp
 pip install maturin
 python -m maturin develop --release
 python examples/weather_server.py
@@ -54,6 +55,33 @@ if __name__ == "__main__":
 The HTTP server accepts JSON-RPC POST requests on `/` or `/jsonrpc` and
 exposes a simple SSE stream on `/events`.
 
+## Resource and prompt example
+
+```python
+from nbmcp import Nbmcp
+
+mcp = Nbmcp("weather")
+
+mcp.resource(
+    name="city_help",
+    content="Use the canonical city name and ISO country code when making requests.",
+    description="Shared documentation for tool callers",
+)
+
+mcp.prompt(
+    name="weather_summary",
+    template="City: {city}\nUnits: {units}\nProvide a concise weather summary.",
+    description="Prompt template placeholder for future agent workflows",
+)
+
+@mcp.tool(description="Get current weather for a city")
+def get_weather(city: str, units: str = "celsius") -> dict:
+    return {"city": city, "temp": 24, "units": units}
+
+if __name__ == "__main__":
+    mcp.run_http("127.0.0.1:8080")
+```
+
 ## Why nbmcp
 
 Most tool servers validate incoming JSON arguments in Python on every request.
@@ -70,7 +98,11 @@ This means:
 ## Features
 
 - Rust-side MCP JSON-RPC transport over stdio
+- HTTP JSON-RPC transport with `/` and `/jsonrpc` endpoints
+- Simple SSE event stream on `/events`
 - Tool registration via `@mcp.tool(...)`
+- Resource registration via `mcp.resource(...)`
+- Prompt template registration via `mcp.prompt(...)`
 - Type-hint driven schema generation
 - Rust validation of tool-call payloads
 - `io`, `process`, and `cpu` concurrency modes
@@ -119,12 +151,26 @@ on older Python versions.
 
 ## Roadmap
 
+<<<<<<< HEAD
 Planned v0.2+ work:
 
 - Resources and prompts
 - HTTP/SSE transport
 - `nbmcp check` schema linter
 - `nbmcp.lock`
+=======
+Implemented so far:
+
+- HTTP/SSE transport
+- `nbmcp check` schema linter
+- `nbmcp.lock`
+- Resource and prompt metadata registration API
+
+Pending:
+
+- Full resources/prompts workflow and runtime integration
+- Production-ready SSE events beyond the connection handshake
+>>>>>>> ab34bde (feat(engine): add prompt/resource registration and improve HTTP/SSE docs)
 
 ## Build
 

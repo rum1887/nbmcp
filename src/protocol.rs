@@ -112,10 +112,12 @@ async fn handle_http_request(
             Ok(response)
         }
         (&Method::GET, "/events") => {
-            let body = Body::from("event: hello\n\n");
+            let body = Body::from("event: connected\n\n");
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "text/event-stream")
+                .header("cache-control", "no-cache")
+                .header("connection", "keep-alive")
                 .body(body)
                 .unwrap())
         }

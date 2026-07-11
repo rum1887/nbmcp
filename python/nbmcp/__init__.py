@@ -83,6 +83,26 @@ class Nbmcp:
 
         return decorator
 
+    def resource(self, name: str, content: str, description: str = ""):
+        """Register a reusable resource with the MCP runtime."""
+        resource_def = {
+            "name": name,
+            "description": description,
+            "content": content,
+        }
+        self._engine.register_resource(json.dumps(resource_def))
+        return resource_def
+
+    def prompt(self, name: str, template: str, description: str = ""):
+        """Register a prompt template for future tool or agent workflows."""
+        prompt_def = {
+            "name": name,
+            "description": description,
+            "template": template,
+        }
+        self._engine.register_prompt(json.dumps(prompt_def))
+        return prompt_def
+
     def run(self):
         """Start the MCP stdio server. Blocks until the client disconnects
         (stdin closes). Call this as the last line of your server script."""

@@ -41,6 +41,8 @@ pub struct ToolEntry {
 pub struct NativeEngine {
     name: String,
     tools: HashMap<String, ToolEntry>,
+    resources: Vec<serde_json::Value>,
+    prompts: Vec<serde_json::Value>,
 }
 
 #[pymethods]
@@ -50,6 +52,8 @@ impl NativeEngine {
         NativeEngine {
             name,
             tools: HashMap::new(),
+            resources: Vec::new(),
+            prompts: Vec::new(),
         }
     }
 
@@ -73,6 +77,24 @@ impl NativeEngine {
                 func,
             },
         );
+        Ok(())
+    }
+
+    fn register_resource(&mut self, resource_json: String) -> PyResult<()> {
+        let resource: serde_json::Value = serde_json::from_str(&resource_json)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!(
+                "nbmcp: invalid resource definition: {e}"
+            )))?;
+        self.resources.push(resource);
+        Ok(())
+    }
+
+    fn register_prompt(&mut self, prompt_json: String) -> PyResult<()> {
+        let prompt: serde_json::Value = serde_json::from_str(&prompt_json)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!(
+                "nbmcp: invalid prompt definition: {e}"
+            )))?;
+        self.prompts.push(prompt);
         Ok(())
     }
 
