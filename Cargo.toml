@@ -7,16 +7,17 @@ description = "Rust transport, routing, and schema validation core for nbmcp"
 [lib]
 # Must match the module name imported from Python (see python/nbmcp/__init__.py)
 name = "_nbmcp_core"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.20", features = ["extension-module"] }
-tokio = { version = "1", features = ["rt-multi-thread", "io-std", "io-util", "sync", "macros"] }
+pyo3 = { version = "0.29" }
+tokio = { version = "1", features = ["rt-multi-thread", "io-std", "io-util", "sync", "macros", "signal"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 hyper = { version = "0.14", features = ["full"] }
 bytes = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+indexmap = "2.13.0"
 
 [profile.release]
 lto = true

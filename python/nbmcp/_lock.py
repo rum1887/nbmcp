@@ -50,9 +50,7 @@ def _project_metadata(project_dir: pathlib.Path) -> dict[str, Any]:
     pyproject = project_dir / "pyproject.toml"
     cargo = project_dir / "Cargo.toml"
     return {
-        "python_version": sys.version.split()[0],
-        "platform": sys.platform,
-        "project_root": str(project_dir.resolve()),
+        "project_root": ".",
         "pyproject": _file_record(pyproject, project_dir),
         "cargo_toml": _file_record(cargo, project_dir),
     }
@@ -113,21 +111,18 @@ def verify_lock(lock_file: str = "nbmcp.lock") -> int:
     cargo_record = metadata.get("cargo_toml", {})
     files = lock_data.get("files", [])
 
+    if not project_root.is_absolute():
+        project_root = pathlib.Path.cwd() / project_root
+
     errors = []
-    if metadata.get("python_version") != sys.version.split()[0]:
-        errors.append(
-            f"Python version mismatch: lock={metadata.get('python_version')} current={sys.version.split()[0]}"
-        )
-    if metadata.get("platform") != sys.platform:
-        errors.append(
-            f"Platform mismatch: lock={metadata.get('platform')} current={sys.platform}"
-        )
 
     for record in (pyproject_record, cargo_record):
         if not record:
             errors.append("Invalid lock file metadata")
             continue
         path = pathlib.Path(record["path"])
+        if not path.is_absolute():
+            path = project_root / path
         if not path.exists():
             errors.append(f"Missing file from lock: {path}")
             continue

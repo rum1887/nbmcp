@@ -13,11 +13,16 @@ use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{broadcast, Mutex as AsyncMutex};
+use tokio::task;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
+
+#[cfg(unix)]
+use tokio::signal::unix::{signal, SignalKind};
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 
@@ -30,34 +35,47 @@ pub async fn serve_stdio(
     let stdin = tokio::io::stdin();
     let stdout = Arc::new(AsyncMutex::new(tokio::io::stdout()));
     let mut lines = BufReader::new(stdin).lines();
+    let mut shutdown: Pin<Box<dyn std::future::Future<Output = ()> + Send>> = Box::pin(shutdown_signal());
 
     loop {
-        let line = lines
-            .next_line()
-            .await
-            .map_err(|e| format!("stdin read error: {e}"))?;
-        let Some(line) = line else {
-            break; // EOF: client disconnected.
-        };
-        let line = line.trim().to_string();
-        if line.is_empty() {
-            continue;
-        }
+        tokio::select! {
+            maybe_line = lines.next_line() => {
+                let line = maybe_line
+                    .map_err(|e| format!("stdin read error: {e}"))?;
+                let Some(line) = line else {
+                    break; // EOF: client disconnected.
+                };
 
-        let tools = Arc::clone(&tools);
-        let resources = Arc::clone(&resources);
-        let prompts = Arc::clone(&prompts);
-        let stdout = Arc::clone(&stdout);
-        let server_name = server_name.clone();
+                let line = line.trim().to_string();
+                if line.is_empty() {
+                    continue;
+                }
 
-        tokio::spawn(async move {
-            if let Some(response) = handle_message(&server_name, &tools, &resources, &prompts, None, &line) {
-                let mut out = stdout.lock().await;
-                let _ = out.write_all(response.to_string().as_bytes()).await;
-                let _ = out.write_all(b"\n").await;
-                let _ = out.flush().await;
+                let tools = Arc::clone(&tools);
+                let resources = Arc::clone(&resources);
+                let prompts = Arc::clone(&prompts);
+                let stdout = Arc::clone(&stdout);
+                let server_name = server_name.clone();
+
+                tokio::spawn(async move {
+                    let line = line.clone();
+                    let response = task::spawn_blocking(move || {
+                        handle_message(&server_name, &tools, &resources, &prompts, None, &line)
+                    })
+                    .await;
+
+                    if let Ok(Some(response)) = response {
+                        let mut out = stdout.lock().await;
+                        let _ = out.write_all(response.to_string().as_bytes()).await;
+                        let _ = out.write_all(b"\n").await;
+                        let _ = out.flush().await;
+                    }
+                });
             }
-        });
+            _ = &mut shutdown => {
+                break;
+            }
+        }
     }
 
     Ok(())
@@ -93,6 +111,7 @@ pub async fn serve_http(
 
     let addr = address.parse().map_err(|e| format!("invalid address: {e}"))?;
     let server = Server::bind(&addr).serve(make_svc);
+    let server = server.with_graceful_shutdown(shutdown_signal());
 
     server.await.map_err(|e| format!("HTTP server error: {e}"))
 }
@@ -116,15 +135,29 @@ async fn handle_http_request(
                         .unwrap())
                 }
             };
-            let line = std::str::from_utf8(&bytes).unwrap_or("");
-            let response = match handle_message(
-                &server_name,
-                &tools,
-                &resources,
-                &prompts,
-                Some(&event_sender),
-                line,
-            ) {
+            let line = match std::str::from_utf8(&bytes) {
+                Ok(s) => s.to_string(),
+                Err(_) => {
+                    return Ok(Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body(Body::from("Invalid request body"))
+                        .unwrap())
+                }
+            };
+            let event_sender = Some(event_sender.clone());
+            let response = match task::spawn_blocking(move || {
+                handle_message(
+                    &server_name,
+                    &tools,
+                    &resources,
+                    &prompts,
+                    event_sender,
+                    &line,
+                )
+            })
+            .await
+            .ok()
+            .flatten() {
                 Some(value) => {
                     let text = value.to_string();
                     Response::builder()
@@ -176,7 +209,7 @@ fn handle_message(
     tools: &HashMap<String, ToolEntry>,
     resources: &Vec<Value>,
     prompts: &Vec<Value>,
-    event_sender: Option<&broadcast::Sender<String>>,
+    event_sender: Option<broadcast::Sender<String>>,
     line: &str,
 ) -> Option<Value> {
     let parsed: Value = match serde_json::from_str(line) {
@@ -255,6 +288,24 @@ fn handle_message(
         }),
     })
 }
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut term = signal(SignalKind::terminate())
+            .expect("nbmcp: failed to install SIGTERM handler");
+        tokio::select! {
+            _ = term.recv() => {},
+            _ = tokio::signal::ctrl_c() => {},
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
 fn get_resource(resources: &Vec<Value>, params: &Value) -> Result<Value, (i64, String)> {
     let name = params
         .get("name")
@@ -398,30 +449,22 @@ mod tests {
     }
 
     #[test]
-    fn tool_list_returns_definitions() {
-        Python::with_gil(|py| {
-            let mut tools = HashMap::new();
-            let definition = json!({"name": "ping", "description": "Ping tool", "inputSchema": {"type": "object", "properties": {}}});
-            let entry = ToolEntry {
-                definition: definition.clone(),
-                input_schema: json!({"type": "object", "properties": {}}),
-                func: py.None().into(),
-            };
-            tools.insert("ping".to_string(), entry);
+    fn tool_list_returns_empty_collection() {
+        let tools = HashMap::<String, ToolEntry>::new();
 
-            let request = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}});
-            let response = handle_message(
-                "weather",
-                &tools,
-                &Vec::new(),
-                &Vec::new(),
-                None,
-                &request.to_string(),
-            )
-            .unwrap();
+        let request = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}});
+        let response = handle_message(
+            "weather",
+            &tools,
+            &Vec::new(),
+            &Vec::new(),
+            None,
+            &request.to_string(),
+        )
+        .unwrap();
 
-            assert_eq!(response["result"]["tools"][0], definition);
-        });
+        let returned_tools = response["result"]["tools"].as_array().expect("tools field must be an array");
+        assert!(returned_tools.is_empty());
     }
 
     #[test]

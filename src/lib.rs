@@ -28,7 +28,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// A single registered tool: its MCP schema plus the Python callable.
-#[derive(Clone)]
 pub struct ToolEntry {
     /// Full MCP tool definition: {"name", "description", "inputSchema"}.
     pub definition: serde_json::Value,
@@ -60,7 +59,7 @@ impl NativeEngine {
     /// Register a tool. `tool_def_json` is the full MCP tool definition
     /// (name/description/inputSchema) generated on the Python side from the
     /// function's type hints.
-    fn register_tool(&mut self, name: String, tool_def_json: String, func: PyObject) -> PyResult<()> {
+    fn register_tool(&mut self, name: String, tool_def_json: String, func: Py<PyAny>) -> PyResult<()> {
         let definition: serde_json::Value = serde_json::from_str(&tool_def_json)
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!(
                 "nbmcp: invalid tool schema for '{name}': {e}"
@@ -103,12 +102,26 @@ impl NativeEngine {
     /// so background Python threads / other interpreter activity aren't
     /// starved while the Rust event loop runs.
     fn run_stdio(&self, py: Python<'_>) -> PyResult<()> {
-        let tools = Arc::new(self.tools.clone());
+        let tools = Arc::new(
+            self.tools
+                .iter()
+                .map(|(name, entry)| {
+                    (
+                        name.clone(),
+                        ToolEntry {
+                            definition: entry.definition.clone(),
+                            input_schema: entry.input_schema.clone(),
+                            func: entry.func.clone_ref(py),
+                        },
+                    )
+                })
+                .collect::<HashMap<_, _>>(),
+        );
         let resources = Arc::new(self.resources.clone());
         let prompts = Arc::new(self.prompts.clone());
         let server_name = self.name.clone();
 
-        py.allow_threads(move || {
+        py.detach(move || {
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
@@ -119,12 +132,26 @@ impl NativeEngine {
     }
 
     fn run_http(&self, py: Python<'_>, address: String) -> PyResult<()> {
-        let tools = Arc::new(self.tools.clone());
+        let tools = Arc::new(
+            self.tools
+                .iter()
+                .map(|(name, entry)| {
+                    (
+                        name.clone(),
+                        ToolEntry {
+                            definition: entry.definition.clone(),
+                            input_schema: entry.input_schema.clone(),
+                            func: entry.func.clone_ref(py),
+                        },
+                    )
+                })
+                .collect::<HashMap<_, _>>(),
+        );
         let resources = Arc::new(self.resources.clone());
         let prompts = Arc::new(self.prompts.clone());
         let server_name = self.name.clone();
 
-        py.allow_threads(move || {
+        py.detach(move || {
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
@@ -155,7 +182,7 @@ pub(crate) fn call_python_tool(
     func: &Py<PyAny>,
     arguments: &serde_json::Value,
 ) -> Result<String, String> {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let kwargs = PyDict::new(py);
         if let serde_json::Value::Object(map) = arguments {
             for (k, v) in map {
@@ -166,7 +193,7 @@ pub(crate) fn call_python_tool(
             }
         }
         let result = func
-            .call(py, (), Some(kwargs))
+            .call(py, (), Some(&kwargs))
             .map_err(|e| {
                 // Surface the Python exception message/type, not a generic error.
                 e.to_string()
@@ -176,7 +203,7 @@ pub(crate) fn call_python_tool(
 }
 
 #[pymodule]
-fn _nbmcp_core(_py: Python, m: &PyModule) -> PyResult<()> {
+fn _nbmcp_core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<NativeEngine>()?;
     Ok(())
 }
