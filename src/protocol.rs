@@ -205,6 +205,8 @@ fn handle_message(
                 "resources": true,
                 "prompts": true
             },
+            "resources": resources,
+            "prompts": prompts,
             "serverInfo": { "name": server_name, "version": env!("CARGO_PKG_VERSION") }
         })),
         "notifications/initialized" | "notifications/cancelled" => {
@@ -216,6 +218,8 @@ fn handle_message(
         }
         "resources/list" => Ok(json!({ "resources": resources })),
         "prompts/list" => Ok(json!({ "prompts": prompts })),
+        "resources/get" => get_resource(resources, &params),
+        "prompts/get" => get_prompt(prompts, &params),
         "tools/call" => handle_tool_call(tools, &params),
         other => Err((-32601, format!("Method not found: {other}"))),
     };
@@ -250,7 +254,31 @@ fn handle_message(
         }),
     })
 }
+fn get_resource(resources: &Vec<Value>, params: &Value) -> Result<Value, (i64, String)> {
+    let name = params
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or((-32602, "Missing or invalid resource name".into()))?;
+    for resource in resources {
+        if resource.get("name").and_then(Value::as_str) == Some(name) {
+            return Ok(json!({ "resource": resource }));
+        }
+    }
+    Err((-32601, format!("Resource not found: {name}")))
+}
 
+fn get_prompt(prompts: &Vec<Value>, params: &Value) -> Result<Value, (i64, String)> {
+    let name = params
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or((-32602, "Missing or invalid prompt name".into()))?;
+    for prompt in prompts {
+        if prompt.get("name").and_then(Value::as_str) == Some(name) {
+            return Ok(json!({ "prompt": prompt }));
+        }
+    }
+    Err((-32601, format!("Prompt not found: {name}")))
+}
 fn handle_tool_call(
     tools: &HashMap<String, ToolEntry>,
     params: &Value,
@@ -305,6 +333,7 @@ mod tests {
             &tools,
             &resources,
             &prompts,
+            None,
             &request.to_string(),
         )
         .unwrap();
@@ -318,6 +347,7 @@ mod tests {
             &tools,
             &resources,
             &prompts,
+            None,
             &request.to_string(),
         )
         .unwrap();
@@ -344,11 +374,66 @@ mod tests {
                 &tools,
                 &Vec::new(),
                 &Vec::new(),
+                None,
                 &request.to_string(),
             )
             .unwrap();
 
             assert_eq!(response["result"]["tools"][0], definition);
         });
+    }
+
+    #[test]
+    fn get_resource_and_prompt_by_name() {
+        let tools = HashMap::<String, ToolEntry>::new();
+        let resources = vec![json!({"name": "city_help", "description": "Help text", "content": "Use ISO codes."})];
+        let prompts = vec![json!({"name": "weather_summary", "description": "Summary prompt", "template": "City: {city}"})];
+
+        let request = json!({"jsonrpc": "2.0", "id": 5, "method": "resources/get", "params": {"name": "city_help"}});
+        let response = handle_message(
+            "weather",
+            &tools,
+            &resources,
+            &prompts,
+            None,
+            &request.to_string(),
+        )
+        .unwrap();
+        assert_eq!(response["result"]["resource"], resources[0]);
+
+        let request = json!({"jsonrpc": "2.0", "id": 6, "method": "prompts/get", "params": {"name": "weather_summary"}});
+        let response = handle_message(
+            "weather",
+            &tools,
+            &resources,
+            &prompts,
+            None,
+            &request.to_string(),
+        )
+        .unwrap();
+        assert_eq!(response["result"]["prompt"], prompts[0]);
+    }
+
+    #[test]
+    fn initialize_includes_resources_and_prompts() {
+        let tools = HashMap::<String, ToolEntry>::new();
+        let resources = vec![json!({"name": "city_help", "description": "Help text", "content": "Use ISO codes."})];
+        let prompts = vec![json!({"name": "weather_summary", "description": "Summary prompt", "template": "City: {city}"})];
+
+        let request = json!({"jsonrpc": "2.0", "id": 7, "method": "initialize", "params": {}});
+        let response = handle_message(
+            "weather",
+            &tools,
+            &resources,
+            &prompts,
+            None,
+            &request.to_string(),
+        )
+        .unwrap();
+
+        let returned_resources = response["result"]["resources"].as_array().expect("resources field must be an array");
+        assert_eq!(returned_resources, &resources);
+        let returned_prompts = response["result"]["prompts"].as_array().expect("prompts field must be an array");
+        assert_eq!(returned_prompts, &prompts);
     }
 }

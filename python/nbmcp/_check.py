@@ -206,6 +206,27 @@ def main(argv=None) -> int:
     generate_parser = lock_subparsers.add_parser("generate", help="Generate a lock file")
     generate_parser.add_argument("output", nargs="?", default="nbmcp.lock")
     generate_parser.add_argument("project_dir", nargs="?", default=".")
+    generate_parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default="stdio",
+        help="Transport type to pin in the lock file",
+    )
+    generate_parser.add_argument(
+        "--address",
+        default="",
+        help="HTTP bind address for transport=\"http\"",
+    )
+    generate_parser.add_argument(
+        "--server-name",
+        default=None,
+        help="Optional server name to write into the lock file",
+    )
+    generate_parser.add_argument(
+        "--description",
+        default="nbmcp server lock file",
+        help="Optional lock file description",
+    )
 
     verify_parser = lock_subparsers.add_parser("verify", help="Verify a lock file")
     verify_parser.add_argument("lockfile", nargs="?", default="nbmcp.lock")
@@ -215,7 +236,14 @@ def main(argv=None) -> int:
         return run_check(args.paths)
     if args.command == "lock":
         if args.lock_command == "generate":
-            return generate_lock(args.output, args.project_dir)
+            return generate_lock(
+                args.output,
+                args.project_dir,
+                transport=args.transport,
+                address=args.address,
+                server_name=args.server_name,
+                description=args.description,
+            )
         if args.lock_command == "verify":
             return verify_lock(args.lockfile)
     return 0

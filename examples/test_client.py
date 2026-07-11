@@ -52,11 +52,19 @@ try:
     send({"jsonrpc": "2.0", "id": 3, "method": "resources/list", "params": {}})
     print("resources/list ->", json.dumps(recv(), indent=2))
 
-    # 5. prompts/list
-    send({"jsonrpc": "2.0", "id": 4, "method": "prompts/list", "params": {}})
+    # 5. resources/get: single item lookup
+    send({"jsonrpc": "2.0", "id": 4, "method": "resources/get", "params": {"name": "city_help"}})
+    print("resources/get ->", json.dumps(recv(), indent=2))
+
+    # 6. prompts/list
+    send({"jsonrpc": "2.0", "id": 5, "method": "prompts/list", "params": {}})
     print("prompts/list ->", json.dumps(recv(), indent=2))
 
-    # 6. tools/call: valid arguments
+    # 7. prompts/get: single item lookup
+    send({"jsonrpc": "2.0", "id": 6, "method": "prompts/get", "params": {"name": "weather_summary"}})
+    print("prompts/get ->", json.dumps(recv(), indent=2))
+
+    # 8. tools/call: valid arguments
     send({
         "jsonrpc": "2.0", "id": 3, "method": "tools/call",
         "params": {"name": "get_weather", "arguments": {"city": "Bengaluru"}},

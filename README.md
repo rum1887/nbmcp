@@ -43,7 +43,8 @@ This means:
 - Tool registration via `@mcp.tool(...)`
 - Resource registration via `mcp.resource(...)`
 - Prompt template registration via `mcp.prompt(...)`
-- Runtime exposure through `resources/list` and `prompts/list`
+- Runtime exposure through `resources/list`, `prompts/list`, `resources/get`, and `prompts/get`
+- `initialize` returns registered resources and prompts for richer client workflows
 - Type-hint driven schema generation
 - Rust validation of tool-call payloads
 - `io`, `process`, and `cpu` concurrency modes
@@ -109,6 +110,12 @@ if __name__ == "__main__":
     mcp.run_http("127.0.0.1:8080")
 ```
 
+The HTTP server exposes asset discovery endpoints clients can use to fetch the registered runtime state:
+
+- `initialize` returns `resources` and `prompts` along with server info
+- `resources/list` and `prompts/list` return the full registered collections
+- `resources/get` and `prompts/get` return a single asset by name
+
 This means:
 
 - invalid calls are rejected before Python ever runs
@@ -168,6 +175,29 @@ Pending:
 ```bash
 pip install maturin
 python -m maturin develop --release
+```
+
+## Lock file workflow
+
+`nbmcp` can generate a lock file that pins project metadata, transport configuration,
+and file checksums for the Python/Rust source tree.
+
+Generate a stdio lock file:
+
+```bash
+PYTHONPATH=python python3 -m nbmcp lock generate nbmcp.lock .
+```
+
+Generate an HTTP lock file with a pinned bind address:
+
+```bash
+PYTHONPATH=python python3 -m nbmcp lock generate --transport http --address 127.0.0.1:8080 nbmcp.lock .
+```
+
+Verify the current lock file:
+
+```bash
+PYTHONPATH=python python3 -m nbmcp lock verify nbmcp.lock
 ```
 
 ## Test
