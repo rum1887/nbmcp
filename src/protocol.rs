@@ -22,6 +22,8 @@ const PROTOCOL_VERSION: &str = "2024-11-05";
 pub async fn serve_stdio(
     server_name: String,
     tools: Arc<HashMap<String, ToolEntry>>,
+    resources: Arc<Vec<Value>>,
+    prompts: Arc<Vec<Value>>,
 ) -> Result<(), String> {
     let stdin = tokio::io::stdin();
     let stdout = Arc::new(AsyncMutex::new(tokio::io::stdout()));
@@ -41,11 +43,13 @@ pub async fn serve_stdio(
         }
 
         let tools = Arc::clone(&tools);
+        let resources = Arc::clone(&resources);
+        let prompts = Arc::clone(&prompts);
         let stdout = Arc::clone(&stdout);
         let server_name = server_name.clone();
 
         tokio::spawn(async move {
-            if let Some(response) = handle_message(&server_name, &tools, &line) {
+            if let Some(response) = handle_message(&server_name, &tools, &resources, &prompts, &line) {
                 let mut out = stdout.lock().await;
                 let _ = out.write_all(response.to_string().as_bytes()).await;
                 let _ = out.write_all(b"\n").await;
@@ -60,14 +64,24 @@ pub async fn serve_stdio(
 pub async fn serve_http(
     server_name: String,
     tools: Arc<HashMap<String, ToolEntry>>,
+    resources: Arc<Vec<Value>>,
+    prompts: Arc<Vec<Value>>,
     address: String,
 ) -> Result<(), String> {
     let make_svc = make_service_fn(move |_conn| {
         let tools = Arc::clone(&tools);
+        let resources = Arc::clone(&resources);
+        let prompts = Arc::clone(&prompts);
         let server_name = server_name.clone();
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
-                handle_http_request(req, server_name.clone(), Arc::clone(&tools))
+                handle_http_request(
+                    req,
+                    server_name.clone(),
+                    Arc::clone(&tools),
+                    Arc::clone(&resources),
+                    Arc::clone(&prompts),
+                )
             }))
         }
     });
@@ -82,6 +96,8 @@ async fn handle_http_request(
     req: Request<Body>,
     server_name: String,
     tools: Arc<HashMap<String, ToolEntry>>,
+    resources: Arc<Vec<Value>>,
+    prompts: Arc<Vec<Value>>,
 ) -> Result<Response<Body>, Infallible> {
     match (req.method(), req.uri().path()) {
         (&Method::POST, "/") | (&Method::POST, "/jsonrpc") => {
@@ -95,7 +111,7 @@ async fn handle_http_request(
                 }
             };
             let line = std::str::from_utf8(&bytes).unwrap_or("");
-            let response = match handle_message(&server_name, &tools, line) {
+            let response = match handle_message(&server_name, &tools, &resources, &prompts, line) {
                 Some(value) => {
                     let text = value.to_string();
                     Response::builder()
@@ -130,7 +146,13 @@ async fn handle_http_request(
 
 /// Handle one JSON-RPC message. Returns `None` for notifications (no `id`,
 /// no response expected).
-fn handle_message(server_name: &str, tools: &HashMap<String, ToolEntry>, line: &str) -> Option<Value> {
+fn handle_message(
+    server_name: &str,
+    tools: &HashMap<String, ToolEntry>,
+    resources: &Vec<Value>,
+    prompts: &Vec<Value>,
+    line: &str,
+) -> Option<Value> {
     let parsed: Value = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(e) => {
@@ -152,7 +174,11 @@ fn handle_message(server_name: &str, tools: &HashMap<String, ToolEntry>, line: &
     let result = match method {
         "initialize" => Ok(json!({
             "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": { "tools": {} },
+            "capabilities": {
+                "tools": {},
+                "resources": true,
+                "prompts": true
+            },
             "serverInfo": { "name": server_name, "version": env!("CARGO_PKG_VERSION") }
         })),
         "notifications/initialized" | "notifications/cancelled" => {
@@ -162,6 +188,8 @@ fn handle_message(server_name: &str, tools: &HashMap<String, ToolEntry>, line: &
             let tool_list: Vec<Value> = tools.values().map(|t| t.definition.clone()).collect();
             Ok(json!({ "tools": tool_list }))
         }
+        "resources/list" => Ok(json!({ "resources": resources })),
+        "prompts/list" => Ok(json!({ "prompts": prompts })),
         "tools/call" => handle_tool_call(tools, &params),
         other => Err((-32601, format!("Method not found: {other}"))),
     };
@@ -212,5 +240,72 @@ fn handle_tool_call(
             "content": [{ "type": "text", "text": format!("Tool error: {err}") }],
             "isError": true
         })),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pyo3::prelude::*;
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    #[test]
+    fn list_resources_and_prompts() {
+        let tools = HashMap::<String, ToolEntry>::new();
+        let resources = vec![json!({"name": "city_help", "description": "Help text", "content": "Use ISO codes."})];
+        let prompts = vec![json!({"name": "weather_summary", "description": "Summary prompt", "template": "City: {city}"})];
+
+        let request = json!({"jsonrpc": "2.0", "id": 1, "method": "resources/list", "params": {}});
+        let response = handle_message(
+            "weather",
+            &tools,
+            &resources,
+            &prompts,
+            &request.to_string(),
+        )
+        .unwrap();
+
+        let returned_resources = response["result"]["resources"].as_array().expect("resources field must be an array");
+        assert_eq!(returned_resources, &resources);
+
+        let request = json!({"jsonrpc": "2.0", "id": 2, "method": "prompts/list", "params": {}});
+        let response = handle_message(
+            "weather",
+            &tools,
+            &resources,
+            &prompts,
+            &request.to_string(),
+        )
+        .unwrap();
+
+        let returned_prompts = response["result"]["prompts"].as_array().expect("prompts field must be an array");
+        assert_eq!(returned_prompts, &prompts);
+    }
+
+    #[test]
+    fn tool_list_returns_definitions() {
+        Python::with_gil(|py| {
+            let mut tools = HashMap::new();
+            let definition = json!({"name": "ping", "description": "Ping tool", "inputSchema": {"type": "object", "properties": {}}});
+            let entry = ToolEntry {
+                definition: definition.clone(),
+                input_schema: json!({"type": "object", "properties": {}}),
+                func: py.None().into(),
+            };
+            tools.insert("ping".to_string(), entry);
+
+            let request = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}});
+            let response = handle_message(
+                "weather",
+                &tools,
+                &Vec::new(),
+                &Vec::new(),
+                &request.to_string(),
+            )
+            .unwrap();
+
+            assert_eq!(response["result"]["tools"][0], definition);
+        });
     }
 }

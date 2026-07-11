@@ -43,6 +43,7 @@ This means:
 - Tool registration via `@mcp.tool(...)`
 - Resource registration via `mcp.resource(...)`
 - Prompt template registration via `mcp.prompt(...)`
+- Runtime exposure through `resources/list` and `prompts/list`
 - Type-hint driven schema generation
 - Rust validation of tool-call payloads
 - `io`, `process`, and `cpu` concurrency modes
@@ -115,19 +116,6 @@ This means:
 - Python only executes the tool body after validation succeeds
 - blocking I/O in tools still releases the GIL normally
 
-## Features
-
-- Rust-side MCP JSON-RPC transport over stdio
-- HTTP JSON-RPC transport with `/` and `/jsonrpc` endpoints
-- Simple SSE event stream on `/events`
-- Tool registration via `@mcp.tool(...)`
-- Resource registration via `mcp.resource(...)`
-- Prompt template registration via `mcp.prompt(...)`
-- Type-hint driven schema generation
-- Rust validation of tool-call payloads
-- `io`, `process`, and `cpu` concurrency modes
-- Minimal v0.1 dependency surface
-
 ## Architecture
 
 ```text
@@ -173,7 +161,6 @@ on older Python versions.
 
 Pending:
 
-- Full resources/prompts workflow and runtime integration
 - Production-ready SSE events beyond the connection handshake
 
 ## Build

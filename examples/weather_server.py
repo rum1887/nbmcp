@@ -6,6 +6,19 @@ from nbmcp import Nbmcp
 mcp = Nbmcp("weather")
 
 
+mcp.resource(
+    name="city_help",
+    content="Use the canonical city name and ISO country code when making requests.",
+    description="Shared documentation for tool callers",
+)
+
+mcp.prompt(
+    name="weather_summary",
+    template="City: {city}\nUnits: {units}\nProvide a concise weather summary.",
+    description="Prompt template placeholder for future agent workflows",
+)
+
+
 @mcp.tool(description="Get the current weather for a city")
 def get_weather(city: str, units: str = "celsius") -> dict:
     # Stand-in for a real API call. Because this runs on a blocking-thread

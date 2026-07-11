@@ -104,6 +104,8 @@ impl NativeEngine {
     /// starved while the Rust event loop runs.
     fn run_stdio(&self, py: Python<'_>) -> PyResult<()> {
         let tools = Arc::new(self.tools.clone());
+        let resources = Arc::new(self.resources.clone());
+        let prompts = Arc::new(self.prompts.clone());
         let server_name = self.name.clone();
 
         py.allow_threads(move || {
@@ -111,13 +113,15 @@ impl NativeEngine {
                 .enable_all()
                 .build()
                 .expect("nbmcp: failed to start tokio runtime");
-            runtime.block_on(protocol::serve_stdio(server_name, tools))
+            runtime.block_on(protocol::serve_stdio(server_name, tools, resources, prompts))
         })
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("nbmcp server error: {e}")))
     }
 
     fn run_http(&self, py: Python<'_>, address: String) -> PyResult<()> {
         let tools = Arc::new(self.tools.clone());
+        let resources = Arc::new(self.resources.clone());
+        let prompts = Arc::new(self.prompts.clone());
         let server_name = self.name.clone();
 
         py.allow_threads(move || {
@@ -125,7 +129,7 @@ impl NativeEngine {
                 .enable_all()
                 .build()
                 .expect("nbmcp: failed to start tokio runtime");
-            runtime.block_on(protocol::serve_http(server_name, tools, address))
+            runtime.block_on(protocol::serve_http(server_name, tools, resources, prompts, address))
         })
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("nbmcp server error: {e}")))
     }
