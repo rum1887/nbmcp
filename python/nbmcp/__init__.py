@@ -12,11 +12,23 @@
         mcp.run()
 """
 
+import importlib
 import json
 
 from . import _concurrency
-from ._nbmcp_core import NativeEngine
 from ._schema import generate_tool_definition
+
+
+def _load_native_engine():
+    try:
+        module = importlib.import_module("nbmcp._nbmcp_core")
+        return module.NativeEngine
+    except ImportError as exc:
+        raise ImportError(
+            "nbmcp: native extension _nbmcp_core is not available. "
+            "Build the package with `python -m maturin develop --release` "
+            "or install the wheel first."
+        ) from exc
 
 __all__ = ["Nbmcp"]
 __version__ = "0.1.0"
@@ -30,7 +42,7 @@ class Nbmcp:
 
     def __init__(self, name: str):
         self.name = name
-        self._engine = NativeEngine(name)
+        self._engine = _load_native_engine()(name)
         self.tools = {}
 
     def tool(self, description: str = "", concurrency: str = "io"):
