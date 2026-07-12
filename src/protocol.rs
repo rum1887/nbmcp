@@ -35,8 +35,7 @@ pub async fn serve_stdio(
     let stdin = tokio::io::stdin();
     let stdout = Arc::new(AsyncMutex::new(tokio::io::stdout()));
     let mut lines = BufReader::new(stdin).lines();
-    let mut shutdown: Pin<Box<dyn std::future::Future<Output = ()> + Send>> =
-        Box::pin(shutdown_signal());
+    let mut shutdown: Pin<Box<dyn std::future::Future<Output = ()> + Send>> = Box::pin(shutdown_signal());
 
     loop {
         tokio::select! {
@@ -110,9 +109,7 @@ pub async fn serve_http(
         }
     });
 
-    let addr = address
-        .parse()
-        .map_err(|e| format!("invalid address: {e}"))?;
+    let addr = address.parse().map_err(|e| format!("invalid address: {e}"))?;
     let server = Server::bind(&addr).serve(make_svc);
     let server = server.with_graceful_shutdown(shutdown_signal());
 
@@ -160,8 +157,7 @@ async fn handle_http_request(
             })
             .await
             .ok()
-            .flatten()
-            {
+            .flatten() {
                 Some(value) => {
                     let text = value.to_string();
                     Response::builder()
@@ -238,7 +234,9 @@ fn handle_message(
             "capabilities": {
                 "tools": {},
                 "resources": true,
-                "prompts": true
+                "prompts": true,
+                "logging": {},
+                "sampling": {}
             },
             "resources": resources,
             "prompts": prompts,
@@ -257,15 +255,20 @@ fn handle_message(
         "prompts/get" => get_prompt(prompts, &params),
         "prompts/render" => render_prompt(prompts, &params),
         "tools/call" => handle_tool_call(tools, &params),
+        "ping" => Ok(json!({})),
+        "logging/setLevel" => {
+            let _level = params.get("level").and_then(Value::as_str).unwrap_or("info");
+            Ok(json!({}))
+        }
+        "sampling/createMessage" => {
+            Err((-32601, "Sampling not yet implemented in nbmcp".to_string()))
+        }
         other => Err((-32601, format!("Method not found: {other}"))),
     };
 
     if let Some(sender) = event_sender {
         if method == "tools/call" {
-            let tool_name = params
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or("unknown");
+            let tool_name = params.get("name").and_then(Value::as_str).unwrap_or("unknown");
             let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
             let status = match &result {
                 Ok(_) => "ok",
@@ -301,8 +304,8 @@ fn handle_message(
 async fn shutdown_signal() {
     #[cfg(unix)]
     {
-        let mut term =
-            signal(SignalKind::terminate()).expect("nbmcp: failed to install SIGTERM handler");
+        let mut term = signal(SignalKind::terminate())
+            .expect("nbmcp: failed to install SIGTERM handler");
         tokio::select! {
             _ = term.recv() => {},
             _ = tokio::signal::ctrl_c() => {},
@@ -341,7 +344,7 @@ fn get_prompt(prompts: &Vec<Value>, params: &Value) -> Result<Value, (i64, Strin
     Err((-32601, format!("Prompt not found: {name}")))
 }
 
-fn render_prompt(prompts: &[Value], params: &Value) -> Result<Value, (i64, String)> {
+fn render_prompt(prompts: &Vec<Value>, params: &Value) -> Result<Value, (i64, String)> {
     let name = params
         .get("name")
         .and_then(Value::as_str)
@@ -423,12 +426,8 @@ mod tests {
     #[test]
     fn list_resources_and_prompts() {
         let tools = HashMap::<String, ToolEntry>::new();
-        let resources = vec![
-            json!({"name": "city_help", "description": "Help text", "content": "Use ISO codes."}),
-        ];
-        let prompts = vec![
-            json!({"name": "weather_summary", "description": "Summary prompt", "template": "City: {city}"}),
-        ];
+        let resources = vec![json!({"name": "city_help", "description": "Help text", "content": "Use ISO codes."})];
+        let prompts = vec![json!({"name": "weather_summary", "description": "Summary prompt", "template": "City: {city}"})];
 
         let request = json!({"jsonrpc": "2.0", "id": 1, "method": "resources/list", "params": {}});
         let response = handle_message(
@@ -441,9 +440,7 @@ mod tests {
         )
         .unwrap();
 
-        let returned_resources = response["result"]["resources"]
-            .as_array()
-            .expect("resources field must be an array");
+        let returned_resources = response["result"]["resources"].as_array().expect("resources field must be an array");
         assert_eq!(returned_resources, &resources);
 
         let request = json!({"jsonrpc": "2.0", "id": 2, "method": "prompts/list", "params": {}});
@@ -457,9 +454,7 @@ mod tests {
         )
         .unwrap();
 
-        let returned_prompts = response["result"]["prompts"]
-            .as_array()
-            .expect("prompts field must be an array");
+        let returned_prompts = response["result"]["prompts"].as_array().expect("prompts field must be an array");
         assert_eq!(returned_prompts, &prompts);
     }
 
@@ -478,21 +473,15 @@ mod tests {
         )
         .unwrap();
 
-        let returned_tools = response["result"]["tools"]
-            .as_array()
-            .expect("tools field must be an array");
+        let returned_tools = response["result"]["tools"].as_array().expect("tools field must be an array");
         assert!(returned_tools.is_empty());
     }
 
     #[test]
     fn get_resource_and_prompt_by_name() {
         let tools = HashMap::<String, ToolEntry>::new();
-        let resources = vec![
-            json!({"name": "city_help", "description": "Help text", "content": "Use ISO codes."}),
-        ];
-        let prompts = vec![
-            json!({"name": "weather_summary", "description": "Summary prompt", "template": "City: {city}"}),
-        ];
+        let resources = vec![json!({"name": "city_help", "description": "Help text", "content": "Use ISO codes."})];
+        let prompts = vec![json!({"name": "weather_summary", "description": "Summary prompt", "template": "City: {city}"})];
 
         let request = json!({"jsonrpc": "2.0", "id": 5, "method": "resources/get", "params": {"name": "city_help"}});
         let response = handle_message(
@@ -523,9 +512,7 @@ mod tests {
     fn render_prompt_by_name() {
         let tools = HashMap::<String, ToolEntry>::new();
         let resources = Vec::new();
-        let prompts = vec![
-            json!({"name": "weather_summary", "description": "Summary prompt", "template": "City: {city}, Units: {units}"}),
-        ];
+        let prompts = vec![json!({"name": "weather_summary", "description": "Summary prompt", "template": "City: {city}, Units: {units}"})];
 
         let request = json!({
             "jsonrpc": "2.0",
@@ -543,21 +530,14 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            response["result"]["rendered"],
-            "City: Bengaluru, Units: celsius"
-        );
+        assert_eq!(response["result"]["rendered"], "City: Bengaluru, Units: celsius");
     }
 
     #[test]
     fn initialize_includes_resources_and_prompts() {
         let tools = HashMap::<String, ToolEntry>::new();
-        let resources = vec![
-            json!({"name": "city_help", "description": "Help text", "content": "Use ISO codes."}),
-        ];
-        let prompts = vec![
-            json!({"name": "weather_summary", "description": "Summary prompt", "template": "City: {city}"}),
-        ];
+        let resources = vec![json!({"name": "city_help", "description": "Help text", "content": "Use ISO codes."})];
+        let prompts = vec![json!({"name": "weather_summary", "description": "Summary prompt", "template": "City: {city}"})];
 
         let request = json!({"jsonrpc": "2.0", "id": 7, "method": "initialize", "params": {}});
         let response = handle_message(
@@ -570,13 +550,9 @@ mod tests {
         )
         .unwrap();
 
-        let returned_resources = response["result"]["resources"]
-            .as_array()
-            .expect("resources field must be an array");
+        let returned_resources = response["result"]["resources"].as_array().expect("resources field must be an array");
         assert_eq!(returned_resources, &resources);
-        let returned_prompts = response["result"]["prompts"]
-            .as_array()
-            .expect("prompts field must be an array");
+        let returned_prompts = response["result"]["prompts"].as_array().expect("prompts field must be an array");
         assert_eq!(returned_prompts, &prompts);
     }
 }
