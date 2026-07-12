@@ -16,7 +16,6 @@ Usage:
 import json
 import statistics
 import time
-from pathlib import Path
 
 from nbmcp import Nbmcp
 
