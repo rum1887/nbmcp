@@ -37,15 +37,14 @@ def _percentile(data: list[float], p: int) -> float:
 
 def _pydantic_validate(args: dict, schema: dict) -> None:
     """Simulate pydantic validation of tool arguments (FastMCP-style)."""
-    from pydantic import Field, create_model
+    from pydantic import BaseModel, Field, ValidationError
 
-    field_defs = {}
-    for prop_name, prop_schema in schema.get("properties", {}).items():
-        js_type = prop_schema.get("type", "string")
-        py_type = {"string": str, "integer": int, "number": float, "boolean": bool}.get(js_type, str)
-        field_defs[prop_name] = (py_type, Field(default=... if prop_name in schema.get("required", []) else None))
-    model = create_model("ToolArgs", **field_defs)
-    model(**args)
+    class ToolArgs(BaseModel):
+        name: str
+        count: int
+        flag: bool = False
+
+    ToolArgs(**args)
 
 
 # ── In-process nbmcp benchmark ──────────────────────────────────────────

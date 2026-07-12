@@ -38,13 +38,13 @@ jobs:
       - name: Install maturin
         run: pip install maturin>=1.4,<2.0
       - name: Build native extension
-        run: maturin develop --release
+        run: maturin develop
       - name: Install dev dependencies
-        run: pip install ruff pytest
+        run: pip install ruff pytest pytest-timeout
       - name: Run ruff
         run: ruff check python/ examples/ --no-fix || true
       - name: Run pytest
-        run: python -m pytest tests/ -v
+        run: python -m pytest tests/ -v --timeout=60
 
   lint:
     name: Lint (cargo clippy + rustfmt)
