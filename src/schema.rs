@@ -73,9 +73,16 @@ fn check_type(expected: &str, instance: &Value, path: &str) -> Result<(), String
     if matches {
         Ok(())
     } else {
+        let actual = value_type_name(instance);
+        let hint = if expected == "integer" && actual == "number" {
+            " (hint: use \"number\" for floats, \"integer\" for whole numbers)"
+        } else if expected == "number" && actual == "integer" {
+            " (hint: use \"integer\" for whole numbers)"
+        } else {
+            ""
+        };
         Err(format!(
-            "{path}: expected type \"{expected}\", got {}",
-            value_type_name(instance)
+            "{path}: expected type \"{expected}\", got \"{actual}\"{hint}"
         ))
     }
 }
