@@ -29,6 +29,11 @@ classifiers = [
 dependencies = []
 optional-dependencies = { dev = ["ruff>=0.0.1", "pytest>=8.0", "maturin>=1.4,<2.0"] }
 
+[project.urls]
+Homepage = "https://github.com/rum1887/nbmcp"
+Repository = "https://github.com/rum1887/nbmcp"
+Documentation = "https://github.com/rum1887/nbmcp"
+
 [tool.maturin]
 python-source = "python"
 module-name = "nbmcp._nbmcp_core"

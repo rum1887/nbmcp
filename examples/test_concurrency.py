@@ -33,7 +33,6 @@ results = {}
 
 
 def call(call_id, n):
-    t0 = time.monotonic()
     send({"jsonrpc": "2.0", "id": call_id, "method": "tools/call",
           "params": {"name": "count_primes", "arguments": {"n": n}}})
 

@@ -1,5 +1,7 @@
 # nbmcp
 
+[![CI](https://github.com/rum1887/nbmcp/actions/workflows/ci.yml/badge.svg)](https://github.com/rum1887/nbmcp/actions/workflows/ci.yml)
+
 `nbmcp` is a fast MCP server framework that gives Rust ownership of transport,
 routing, and schema validation while Python owns the tool bodies.
 
@@ -7,6 +9,7 @@ routing, and schema validation while Python owns the tool bodies.
 - Python defines tool behavior with plain functions and type hints.
 - Supports `io`, `process`, and `cpu` concurrency modes.
 
+📊 [Benchmarks](./BENCHMARKS.md) · 🔍 [Comparison with FastMCP / Official SDK](./COMPARISON.md) · 🗺️ [Roadmap](./ROADMAP.md)
 
 ## Why nbmcp
 
@@ -23,43 +26,36 @@ Benefits:
 
 ## Features
 
-- Rust-side MCP JSON-RPC transport over stdio
-- HTTP JSON-RPC transport with `/` and `/jsonrpc`
-- SSE event stream on `/events`
-- tool registration via `@mcp.tool(...)`
-- resource registration via `mcp.resource(...)`
-- prompt template registration via `mcp.prompt(...)`
-- runtime discovery with `resources/list`, `prompts/list`, `resources/get`, `prompts/get`
-- prompt rendering via `prompts/render`
-- type-hint-driven tool input schema generation
-- Rust validation of tool-call payloads
-- `io`, `process`, and `cpu` concurrency modes
+- ✅ Rust-side MCP JSON-RPC transport over stdio
+- ✅ HTTP JSON-RPC transport with `/` and `/jsonrpc`
+- ✅ SSE event stream on `/events`
+- ✅ tool registration via `@mcp.tool(...)`
+- ✅ resource registration via `mcp.resource(...)`
+- ✅ prompt template registration via `mcp.prompt(...)`
+- ✅ runtime discovery with `resources/list`, `prompts/list`, `resources/get`, `prompts/get`
+- ✅ prompt rendering via `prompts/render`
+- ✅ type-hint-driven tool input schema generation
+- ✅ Rust validation of tool-call payloads
+- ✅ `io`, `process`, and `cpu` concurrency modes
 
 ## Installation
 
-Assuming `nbmcp` is published on PyPI, install the package with:
+Install from PyPI:
 
 ```bash
 python3 -m pip install nbmcp
 ```
 
-For local development, install the repository in editable mode:
+For local development, install the repository in editable mode (requires a Rust toolchain):
 
 ```bash
 python3 -m pip install -e .
 ```
 
-Optional convenience install using `uv`:
-
-```bash
-python3 -m pip install uv
-uv install .
-```
-
 If you want to install a development preview directly from GitHub:
 
 ```bash
-python3 -m pip install git+https://github.com/<user>/nbmcp.git
+python3 -m pip install git+https://github.com/rum1887/nbmcp.git
 ```
 
 ## Quick start

@@ -409,9 +409,7 @@ fn handle_tool_call(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pyo3::prelude::*;
     use serde_json::json;
-    use std::collections::HashMap;
 
     #[test]
     fn list_resources_and_prompts() {

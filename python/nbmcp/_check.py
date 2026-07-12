@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import hashlib
-import json
 import pathlib
 import sys
 from dataclasses import dataclass
@@ -188,9 +186,6 @@ def run_check(paths: Optional[List[str]] = None) -> int:
 
     print(f"nbmcp check passed: {len(tools)} tool(s) inspected")
     return 0
-
-
-import argparse
 
 
 def main(argv=None) -> int:

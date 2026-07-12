@@ -6,7 +6,7 @@ import pathlib
 import sys
 import tomllib
 from datetime import datetime
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 
 LOCK_VERSION = "nbmcp-lock-v1"
 
