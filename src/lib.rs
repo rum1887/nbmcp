@@ -59,11 +59,17 @@ impl NativeEngine {
     /// Register a tool. `tool_def_json` is the full MCP tool definition
     /// (name/description/inputSchema) generated on the Python side from the
     /// function's type hints.
-    fn register_tool(&mut self, name: String, tool_def_json: String, func: Py<PyAny>) -> PyResult<()> {
-        let definition: serde_json::Value = serde_json::from_str(&tool_def_json)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!(
+    fn register_tool(
+        &mut self,
+        name: String,
+        tool_def_json: String,
+        func: Py<PyAny>,
+    ) -> PyResult<()> {
+        let definition: serde_json::Value = serde_json::from_str(&tool_def_json).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!(
                 "nbmcp: invalid tool schema for '{name}': {e}"
-            )))?;
+            ))
+        })?;
         let input_schema = definition
             .get("inputSchema")
             .cloned()
@@ -80,21 +86,84 @@ impl NativeEngine {
     }
 
     fn register_resource(&mut self, resource_json: String) -> PyResult<()> {
-        let resource: serde_json::Value = serde_json::from_str(&resource_json)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!(
+        let resource: serde_json::Value = serde_json::from_str(&resource_json).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!(
                 "nbmcp: invalid resource definition: {e}"
-            )))?;
+            ))
+        })?;
         self.resources.push(resource);
         Ok(())
     }
 
     fn register_prompt(&mut self, prompt_json: String) -> PyResult<()> {
-        let prompt: serde_json::Value = serde_json::from_str(&prompt_json)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!(
+        let prompt: serde_json::Value = serde_json::from_str(&prompt_json).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!(
                 "nbmcp: invalid prompt definition: {e}"
-            )))?;
+            ))
+        })?;
         self.prompts.push(prompt);
         Ok(())
+    }
+
+    /// Benchmark in-process validation only (no subprocess, no IPC).
+    /// Returns a list of per-call durations in microseconds.
+    fn bench_validate(&self, tool_name: String, args_json_list: Vec<String>) -> PyResult<Vec<f64>> {
+        let entry = self.tools.get(&tool_name).ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err(format!("Unknown tool: {tool_name}"))
+        })?;
+        let mut timings = Vec::with_capacity(args_json_list.len());
+        for args_json in &args_json_list {
+            let arguments: serde_json::Value = serde_json::from_str(args_json).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Invalid JSON: {e}"))
+            })?;
+            let start = std::time::Instant::now();
+            let _ = schema::validate(&entry.input_schema, &arguments);
+            let elapsed = start.elapsed();
+            timings.push(elapsed.as_secs_f64() * 1_000_000.0); // microseconds
+        }
+        Ok(timings)
+    }
+
+    /// Benchmark in-process validation + Python call (no subprocess, no IPC).
+    /// Returns a list of per-call durations in microseconds.
+    fn bench_tool_call(
+        &self,
+        py: Python<'_>,
+        tool_name: String,
+        args_json_list: Vec<String>,
+    ) -> PyResult<Vec<f64>> {
+        let entry = self.tools.get(&tool_name).ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err(format!("Unknown tool: {tool_name}"))
+        })?;
+        let mut timings = Vec::with_capacity(args_json_list.len());
+        for args_json in &args_json_list {
+            let arguments: serde_json::Value = serde_json::from_str(args_json).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Invalid JSON: {e}"))
+            })?;
+            let start = std::time::Instant::now();
+            // Validate
+            if schema::validate(&entry.input_schema, &arguments).is_err() {
+                // Malformed: just record timing and continue
+                let elapsed = start.elapsed();
+                timings.push(elapsed.as_secs_f64() * 1_000_000.0);
+                continue;
+            }
+            // Call Python function
+            let kwargs = PyDict::new(py);
+            if let serde_json::Value::Object(map) = &arguments {
+                for (k, v) in map {
+                    let py_val = convert::json_to_py(py, v)
+                        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+                    kwargs
+                        .set_item(k, py_val)
+                        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+                }
+            }
+            let _ = entry.func.call(py, (), Some(&kwargs));
+            let elapsed = start.elapsed();
+            timings.push(elapsed.as_secs_f64() * 1_000_000.0);
+        }
+        Ok(timings)
     }
 
     /// Start the MCP stdio server. Blocks the calling Python thread until
@@ -126,7 +195,12 @@ impl NativeEngine {
                 .enable_all()
                 .build()
                 .expect("nbmcp: failed to start tokio runtime");
-            runtime.block_on(protocol::serve_stdio(server_name, tools, resources, prompts))
+            runtime.block_on(protocol::serve_stdio(
+                server_name,
+                tools,
+                resources,
+                prompts,
+            ))
         })
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("nbmcp server error: {e}")))
     }
@@ -156,13 +230,23 @@ impl NativeEngine {
                 .enable_all()
                 .build()
                 .expect("nbmcp: failed to start tokio runtime");
-            runtime.block_on(protocol::serve_http(server_name, tools, resources, prompts, address))
+            runtime.block_on(protocol::serve_http(
+                server_name,
+                tools,
+                resources,
+                prompts,
+                address,
+            ))
         })
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("nbmcp server error: {e}")))
     }
 
     fn __repr__(&self) -> String {
-        format!("NativeEngine(name={:?}, tools={})", self.name, self.tools.len())
+        format!(
+            "NativeEngine(name={:?}, tools={})",
+            self.name,
+            self.tools.len()
+        )
     }
 }
 
@@ -187,17 +271,13 @@ pub(crate) fn call_python_tool(
         if let serde_json::Value::Object(map) = arguments {
             for (k, v) in map {
                 let py_val = convert::json_to_py(py, v).map_err(|e| e.to_string())?;
-                kwargs
-                    .set_item(k, py_val)
-                    .map_err(|e| e.to_string())?;
+                kwargs.set_item(k, py_val).map_err(|e| e.to_string())?;
             }
         }
-        let result = func
-            .call(py, (), Some(&kwargs))
-            .map_err(|e| {
-                // Surface the Python exception message/type, not a generic error.
-                e.to_string()
-            })?;
+        let result = func.call(py, (), Some(&kwargs)).map_err(|e| {
+            // Surface the Python exception message/type, not a generic error.
+            e.to_string()
+        })?;
         convert::py_result_to_text(py, &result).map_err(|e| e.to_string())
     })
 }

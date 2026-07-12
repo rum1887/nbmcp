@@ -9,7 +9,7 @@ routing, and schema validation while Python owns the tool bodies.
 - Python defines tool behavior with plain functions and type hints.
 - Supports `io`, `process`, and `cpu` concurrency modes.
 
-📊 [Benchmarks](./BENCHMARKS.md) · 🔍 [Comparison with FastMCP / Official SDK](./COMPARISON.md) · 🗺️ [Roadmap](./ROADMAP.md)
+📊 [Benchmarks](./docs/BENCHMARKS.md) · 🔍 [Comparison with FastMCP / Official SDK](./docs/COMPARISON.md) · 🗺️ [Roadmap](./docs/ROADMAP.md)
 
 ## Why nbmcp
 

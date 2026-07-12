@@ -33,9 +33,7 @@ fn validate_node(schema: &Value, instance: &Value, path: &str) -> Result<(), Str
                 for req in required {
                     if let Value::String(key) = req {
                         if !instance_obj.contains_key(key) {
-                            return Err(format!(
-                                "{path}: missing required field \"{key}\""
-                            ));
+                            return Err(format!("{path}: missing required field \"{key}\""));
                         }
                     }
                 }
